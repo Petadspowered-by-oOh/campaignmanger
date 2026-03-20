@@ -84,13 +84,13 @@ body{font-family:'Figtree',sans-serif;background:var(--paper);color:var(--ink);m
 .tl-li{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--slate);}
 .tl-dot{width:10px;height:10px;border-radius:2px;}
 .tl-hdr{display:flex;background:#f8f9fc;border-bottom:1px solid var(--border);}
-.tl-lbl-col{min-width:240px;padding:8px 16px;font-size:10px;font-weight:700;color:var(--slate);letter-spacing:.8px;text-transform:uppercase;border-right:1px solid var(--border);flex-shrink:0;}
+.tl-lbl-col{min-width:280px;padding:8px 16px;font-size:10px;font-weight:700;color:var(--slate);letter-spacing:.8px;text-transform:uppercase;border-right:1px solid var(--border);flex-shrink:0;}
 .tl-months{display:flex;flex:1;}
 .tl-month{flex:1;min-width:84px;padding:8px 0;text-align:center;font-size:11px;font-weight:700;color:var(--slate);border-right:1px solid var(--border);}
 .tl-month.cur{background:var(--accent-lt);color:var(--accent);}
 .tl-camp-row{display:flex;border-bottom:1px solid var(--border);background:#f8f9fc;min-height:38px;align-items:center;cursor:pointer;}
 .tl-camp-row:hover{background:#f0f1f8;}
-.tl-camp-lbl{min-width:240px;padding:8px 16px;font-size:12px;font-weight:700;border-right:1px solid var(--border);flex-shrink:0;display:flex;align-items:center;gap:6px;}
+.tl-camp-lbl{min-width:280px;padding:8px 16px;font-size:12px;font-weight:700;border-right:1px solid var(--border);flex-shrink:0;display:flex;align-items:center;gap:6px;}
 .tl-camp-bar-area{flex:1;position:relative;height:38px;display:flex;align-items:center;}
 .tl-camp-bar{position:absolute;height:18px;border-radius:3px;opacity:.3;}
 .tl-item-row{display:flex;border-bottom:1px solid #f0f1f5;min-height:34px;align-items:center;display:none;}
@@ -244,6 +244,18 @@ body{font-family:'Figtree',sans-serif;background:var(--paper);color:var(--ink);m
     <input class="auth-input" id="sup-password" type="password" placeholder="Password" onkeydown="if(event.key==='Enter')signIn('supplier')">
     <button class="auth-btn" id="sup-btn" onclick="signIn('supplier')">Access Dashboard</button>
     <div style="font-size:11px;color:#9aa3b0;margin-top:16px">🔒 Your data is isolated · Powered by Supabase</div>
+  </div>
+</div>
+
+<!-- INTERNAL LOGIN SCREEN -->
+<div id="internal-login-screen" style="display:none;position:fixed;inset:0;background:var(--paper);z-index:1000;align-items:center;justify-content:center;">
+  <div class="login-box">
+    <div class="login-logo">P</div>
+    <div class="login-title">PetAds Hub</div>
+    <div class="login-sub">Sign in to access the internal dashboard</div>
+    <input id="internal-pw" class="login-input" type="password" placeholder="Password" onkeydown="if(event.key==='Enter')checkInternalLogin()">
+    <button class="login-btn" onclick="checkInternalLogin()">Sign In</button>
+    <div class="login-err" id="internal-pw-err">Incorrect password. Try again.</div>
   </div>
 </div>
 
@@ -909,20 +921,42 @@ async function init() {
     document.getElementById('sup-login-title').textContent = (typeof cl2 === 'string' ? cl2 : sup) + ' Dashboard';
     document.getElementById('supplier-login').style.display = 'flex';
   } else {
-    // Internal — no login, go straight in
-    // Load from Supabase, fall back to localStorage
-    try {
-      const { data: cd } = await _supabase.from('campaign_items').select('*')._exec();
-      if (cd && cd.length) {
-        items = cd.map(r => ({ id:r.id, client:r.client, campaign:r.campaign, name:r.name, start:r.start_date, end:r.end_date, budget:r.budget, status:r.status }));
-        try {
-          const { data: wd } = await _supabase.from('wip_notes').select('*')._exec();
-          if (wd && wd.length) wip = wd.map(r => ({ id:r.id, title:r.title, date:r.note_date, type:r.type, supplier:r.supplier, notes:r.notes||[] }));
-        } catch(e) {}
-      } else { load(); }
-    } catch(e) { load(); }
-    document.getElementById('internal-view').style.display = 'flex';
-    renderAll();
+    // Internal — check if already logged in this session
+    if (sessionStorage.getItem('petads_internal_auth') === 'true') {
+      await loadInternalData();
+    } else {
+      document.getElementById('internal-login-screen').style.display = 'flex';
+    }
+  }
+}
+
+async function loadInternalData() {
+  try {
+    const { data: cd } = await _supabase.from('campaign_items').select('*')._exec();
+    if (cd && cd.length) {
+      items = cd.map(r => ({ id:r.id, client:r.client, campaign:r.campaign, name:r.name, start:r.start_date, end:r.end_date, budget:r.budget, status:r.status }));
+      try {
+        const { data: wd } = await _supabase.from('wip_notes').select('*')._exec();
+        if (wd && wd.length) wip = wd.map(r => ({ id:r.id, title:r.title, date:r.note_date, type:r.type, supplier:r.supplier, notes:r.notes||[] }));
+      } catch(e) {}
+    } else { load(); }
+  } catch(e) { load(); }
+  document.getElementById('internal-view').style.display = 'flex';
+  renderAll();
+}
+
+function checkInternalLogin() {
+  const pw = document.getElementById('internal-pw').value;
+  const INTERNAL_PW = 'PetAds2026!';
+  const ADMIN_PW = 'PetAdsAdmin!';
+  if (pw === INTERNAL_PW || pw === ADMIN_PW) {
+    sessionStorage.setItem('petads_internal_auth', 'true');
+    if (pw === ADMIN_PW) sessionStorage.setItem('petads_admin', 'true');
+    document.getElementById('internal-login-screen').style.display = 'none';
+    loadInternalData();
+  } else {
+    document.getElementById('internal-pw-err').style.display = 'block';
+    document.getElementById('internal-pw').value = '';
   }
 }
 
@@ -1064,6 +1098,14 @@ function renderCampaigns(){
 function toggleCamp(cid){const rows=document.querySelectorAll('[data-camp="'+cid+'"]'),chev=document.getElementById('chev-'+cid),open=chev.classList.contains('open');rows.forEach(r=>r.classList.toggle('visible',!open));chev.classList.toggle('open',!open);}
 function toggleAllCamps(){allExpanded=!allExpanded;document.querySelectorAll('.camp-chevron').forEach(ch=>{const cid=ch.id.replace('chev-','');document.querySelectorAll('[data-camp="'+cid+'"]').forEach(r=>r.classList.toggle('visible',allExpanded));ch.classList.toggle('open',allExpanded);});document.getElementById('expand-all-btn').textContent=allExpanded?'Collapse All':'Expand All';}
 function deriveCampStatus(its){const today=new Date();if(its.some(i=>i.start&&i.end&&new Date(i.start)<=today&&new Date(i.end)>=today))return'Live';if(its.every(i=>i.status==='Complete'))return'Complete';if(its.some(i=>i.status==='Planning'))return'Planning';return'Booked';}
+let bpStatusFilter = 'all';
+function setBPStatus(s, el) {
+  bpStatusFilter = s;
+  document.querySelectorAll('[data-bpstatus]').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+  renderBlockPlan();
+}
+
 function renderBlockPlan(fc){
   populateFilter('bp-filter');
   const filter=fc||document.getElementById('bp-filter').value,camps=getCampaigns(filter),wrap=document.getElementById('bp-wrap');
@@ -1072,7 +1114,7 @@ function renderBlockPlan(fc){
   const mn=new Date(Math.min(...allD)),mx=new Date(Math.max(...allD));
   mn.setDate(mn.getDate()-((mn.getDay()+6)%7)-7); // 1 week padding before
   mx.setDate(mx.getDate()+7); // 1 week padding after
-  const weeks=[];let cur=new Date(mn);while(cur<=mx&&weeks.length<60){weeks.push(new Date(cur));cur.setDate(cur.getDate()+7);}
+  const weeks=[];let cur=new Date(mn);while(cur<=mx){weeks.push(new Date(cur));cur.setDate(cur.getDate()+7);}
   const today=new Date(),W=84,TW=weeks.length*W;
   function bp(s,e){const cS=new Date(s),cE=new Date(e);if(isNaN(cS)||isNaN(cE))return null;return{left:Math.max(0,((cS-weeks[0])/86400000/(weeks.length*7))*TW),w:Math.max(12,(((cE-cS)/86400000+1)/(weeks.length*7))*TW-2)};}
   document.getElementById('bp-badge').textContent=camps.length+' campaigns';
@@ -1081,7 +1123,7 @@ function renderBlockPlan(fc){
   html+='</div></div>';
   camps.forEach((camp,ci)=>{
     const col=getColor(camp.client),tlid='tl-'+ci,cp=bp(camp.start,camp.end);
-    html+='<div class="tl-camp-row" onclick="toggleTLCamp(\''+tlid+'\')"><div class="tl-camp-lbl"><span style="color:var(--accent);font-size:11px" id="tl-chev-'+tlid+'">▶</span><span style="width:8px;height:8px;border-radius:50%;background:'+col+';display:inline-block;flex-shrink:0"></span><div style="display:flex;flex-direction:column;max-width:160px;overflow:hidden"><span style="font-size:11px;font-weight:800;color:'+col+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+camp.client+'</span><span style="font-size:10px;font-weight:500;color:var(--slate);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+camp.campaign+'</span></div></div><div class="tl-camp-bar-area" style="min-width:'+TW+'px">'+(cp?'<div class="tl-camp-bar" style="left:'+cp.left+'px;width:'+cp.w+'px;background:'+col+'"></div>':'')+'</div></div>';
+    html+='<div class="tl-camp-row" onclick="toggleTLCamp(\''+tlid+'\')"><div class="tl-camp-lbl"><span style="color:var(--accent);font-size:11px" id="tl-chev-'+tlid+'">▶</span><span style="width:8px;height:8px;border-radius:50%;background:'+col+';display:inline-block;flex-shrink:0"></span><div style="display:flex;flex-direction:column;max-width:210px;overflow:hidden"><span style="font-size:11px;font-weight:800;color:'+col+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+camp.client+'</span><span style="font-size:10px;font-weight:500;color:var(--slate);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+camp.campaign+'</span></div></div><div class="tl-camp-bar-area" style="min-width:'+TW+'px">'+(cp?'<div class="tl-camp-bar" style="left:'+cp.left+'px;width:'+cp.w+'px;background:'+col+'"></div>':'')+'</div></div>';
     camp.items.forEach((item,ii)=>{const pos=bp(item.start,item.end),ic=item.status==='Live'?'#16a34a':item.status==='Complete'?'#64748b':item.status==='Planning'?'#d97706':col;html+='<div class="tl-item-row" data-tl="'+tlid+'"><div class="tl-item-lbl"><span style="color:var(--border)">'+(ii===camp.items.length-1?'└':'├')+'</span> '+(item.name.length>30?item.name.substring(0,30)+'…':item.name)+'<div class="tl-item-sub-lbl">'+(item.budget?'$'+item.budget.toLocaleString():'TBC')+'</div></div><div class="tl-item-bar-area" style="min-width:'+TW+'px">'+(pos?'<div class="tl-item-bar" style="left:'+pos.left+'px;width:'+pos.w+'px;background:'+ic+'">'+(pos.w>50?item.status:'')+'</div>':'')+'</div></div>';});
   });
   wrap.innerHTML=html+'</div></div>';
@@ -1183,7 +1225,7 @@ function renderSVBlockPlan(camps,col,cl){
   html+='</div></div>';
   camps.forEach((camp,ci)=>{
     const tlid='svtl-'+ci,cp=bp(camp.start,camp.end);
-    html+='<div class="tl-camp-row" onclick="toggleTLCamp(\''+tlid+'\')"><div class="tl-camp-lbl"><span style="color:var(--accent);font-size:11px" id="tl-chev-'+tlid+'">▶</span><span style="width:8px;height:8px;border-radius:50%;background:'+col+';display:inline-block;flex-shrink:0"></span><div style="display:flex;flex-direction:column;max-width:160px;overflow:hidden"><span style="font-size:11px;font-weight:800;color:'+col+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+camp.client+'</span><span style="font-size:10px;font-weight:500;color:var(--slate);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+camp.campaign+'</span></div></div><div class="tl-camp-bar-area" style="min-width:'+TW+'px">'+(cp?'<div class="tl-camp-bar" style="left:'+cp.left+'px;width:'+cp.w+'px;background:'+col+'"></div>':'')+'</div></div>';
+    html+='<div class="tl-camp-row" onclick="toggleTLCamp(\''+tlid+'\')"><div class="tl-camp-lbl"><span style="color:var(--accent);font-size:11px" id="tl-chev-'+tlid+'">▶</span><span style="width:8px;height:8px;border-radius:50%;background:'+col+';display:inline-block;flex-shrink:0"></span><div style="display:flex;flex-direction:column;max-width:210px;overflow:hidden"><span style="font-size:11px;font-weight:800;color:'+col+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+camp.client+'</span><span style="font-size:10px;font-weight:500;color:var(--slate);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+camp.campaign+'</span></div></div><div class="tl-camp-bar-area" style="min-width:'+TW+'px">'+(cp?'<div class="tl-camp-bar" style="left:'+cp.left+'px;width:'+cp.w+'px;background:'+col+'"></div>':'')+'</div></div>';
     camp.items.forEach((item,ii)=>{const pos=bp(item.start,item.end),ic=item.status==='Live'?'#16a34a':item.status==='Complete'?'#64748b':item.status==='Planning'?'#d97706':col;html+='<div class="tl-item-row" data-tl="'+tlid+'"><div class="tl-item-lbl"><span style="color:var(--border)">'+(ii===camp.items.length-1?'└':'├')+'</span> '+(item.name.length>30?item.name.substring(0,30)+'…':item.name)+'<div class="tl-item-sub-lbl">'+(item.budget?'$'+item.budget.toLocaleString():'TBC')+'</div></div><div class="tl-item-bar-area" style="min-width:'+TW+'px">'+(pos?'<div class="tl-item-bar" style="left:'+pos.left+'px;width:'+pos.w+'px;background:'+ic+'">'+(pos.w>50?item.status:'')+'</div>':'')+'</div></div>';});
   });
   wrap.innerHTML=html+'</div></div>';
@@ -1236,7 +1278,12 @@ function addWIP(){
   document.getElementById('wip-save-btn').textContent='Save Note';
 }
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3000);}
-function renderAll(){renderOverview();renderBlockPlan();renderCampaigns();renderWIP();}
+function renderAll(){
+  renderOverview();renderBlockPlan();renderCampaigns();renderWIP();
+  // Show upload CSV only for admins
+  const uploadBtn = document.getElementById('upload-btn');
+  if(uploadBtn) uploadBtn.style.display = sessionStorage.getItem('petads_admin')==='true' ? 'flex' : 'none';
+}
 document.querySelectorAll('.modal-overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('open');}));
 init();
 
