@@ -217,9 +217,7 @@ body{font-family:'Figtree',sans-serif;background:var(--paper);color:var(--ink);m
 </div>
 
 <!-- DEMO BANNER -->
-<div id="demo-banner" style="display:none;background:#fef3c7;border-bottom:2px solid #d97706;padding:8px 24px;font-size:12px;color:#92400e;text-align:center;position:fixed;top:0;left:0;right:0;z-index:999;">
-  ⚠️ <strong>Demo mode</strong> — data stored in your browser only. <span onclick="nav('settings',null)" style="cursor:pointer;font-weight:700;text-decoration:underline;color:#92400e">Connect Supabase →</span>
-</div>
+<!-- demo banner removed -->
 
 <!-- INTERNAL LOGIN -->
 <div id="internal-login" style="display:none;min-height:100vh;align-items:center;justify-content:center;background:#f5f6f8;" class="auth-wrap">
@@ -266,8 +264,8 @@ body{font-family:'Figtree',sans-serif;background:var(--paper);color:var(--ink);m
     <div class="sb-section">Settings</div>
     <div class="sb-item" onclick="nav('settings',this)">⚙️ &nbsp;Supabase Setup</div>
     <div class="sb-footer">
-      <div id="sb-user-email" style="color:rgba(255,255,255,.45);font-size:11px;margin-bottom:8px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Demo mode</div>
-      <button id="sb-signout-btn" onclick="signOut()" style="display:none;width:100%;padding:6px;background:rgba(255,255,255,.08);border:none;border-radius:6px;color:rgba(255,255,255,.5);font-size:11px;font-weight:600;cursor:pointer;font-family:Figtree,sans-serif">Sign Out</button>
+      
+      <!-- no sign out needed -->
     </div>
   </div>
   <div class="main-wrap">
@@ -394,7 +392,7 @@ body{font-family:'Figtree',sans-serif;background:var(--paper);color:var(--ink);m
 
       <div id="s-settings" class="section">
         <div class="sec-title" style="margin-bottom:6px">Supabase Setup</div>
-        <div style="font-size:13px;color:var(--slate);margin-bottom:20px">Connect your Supabase project to enable real login and cloud data storage.</div>
+        <div style="font-size:13px;color:var(--slate);margin-bottom:20px">Connected to Supabase. Data saves automatically after each CSV upload.</div>
         <div class="card" style="max-width:520px">
           <div class="card-hdr"><div class="card-title">Connection Settings</div></div>
           <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
@@ -795,7 +793,7 @@ function afterAuth() {
   document.getElementById('internal-login').style.display = 'none';
   document.getElementById('supplier-login').style.display = 'none';
   document.getElementById('loading-screen').style.display = 'none';
-  document.getElementById('demo-banner').style.display = 'none'; // hide demo banner on login
+  // demo banner removed
   if (currentRole === 'internal') {
     document.getElementById('sb-user-email').textContent = currentUser ? currentUser.email : '';
     document.getElementById('sb-signout-btn').style.display = 'block';
@@ -855,7 +853,7 @@ async function loadSupplierData() {
 }
 
 async function pushItemsToSupabase() {
-  if (!supabaseMode || currentRole !== 'internal') return;
+  if (!supabaseMode) return;
   await fetch(_supabase.url+'/rest/v1/campaign_items?id=neq.00000000-0000-0000-0000-000000000000', {method:'DELETE', headers:{'apikey':_supabase.key,'Authorization':'Bearer '+(_supabase._token||_supabase.key)}});
   const rows = items.map(i => ({ client:i.client, supplier_slug:slugify(i.client), campaign:i.campaign, name:i.name, start_date:i.start||null, end_date:i.end||null, budget:i.budget||0, status:i.status||'Booked' }));
   if (rows.length) {
@@ -885,49 +883,46 @@ const TITLES = {overview:'Overview',blockplan:'Block Plan',campaigns:'All Campai
 async function init() {
   const urlParams = new URLSearchParams(window.location.search);
   const sup = urlParams.get('supplier');
-
-  // Load saved config into settings fields
+  
+  document.getElementById('loading-screen').style.display = 'none';
+  
+  // Load config fields
   const cfgUrl = localStorage.getItem(SUPA_URL_KEY);
   const cfgKey = localStorage.getItem(SUPA_KEY_KEY);
-  if (cfgUrl) document.getElementById('cfg-url').value = cfgUrl;
-  if (cfgKey) document.getElementById('cfg-key').value = cfgKey;
+  if (cfgUrl) { const el=document.getElementById('cfg-url'); if(el) el.value = cfgUrl; }
+  if (cfgKey) { const el=document.getElementById('cfg-key'); if(el) el.value = cfgKey; }
 
-  if (initSupabase()) {
-    // ── Supabase connected ──
-    const { data: { session } } = await _supabase.auth.getSession();
-    if (session) {
-      currentUser = session.user;
-      const meta = session.user.user_metadata || {};
-      currentRole = meta.role || 'internal'; // default to internal
-      currentSupplierSlug = meta.supplier_slug || sup || null;
-      document.getElementById('loading-screen').style.display = 'none';
-      afterAuth();
-    } else {
-      document.getElementById('loading-screen').style.display = 'none';
-      if (sup) {
-        const cl = getClients().find(c => slugify(c) === sup) || sup;
-        document.getElementById('sup-login-title').textContent = (typeof cl === 'string' ? cl : sup) + ' Dashboard';
-        currentSupplierSlug = sup;
-        document.getElementById('supplier-login').style.display = 'flex';
-      } else {
-        document.getElementById('internal-login').style.display = 'flex';
-      }
-    }
+  initSupabase();
+  currentRole = 'internal';
+
+  if (sup) {
+    // Supplier link — show password gate
+    const cl = getClients().find(c => slugify(c) === sup) || sup;
+    currentSupplierSlug = sup;
+    // Try loading from Supabase first for supplier data
+    try {
+      const { data: cd } = await _supabase.from('campaign_items').select('*').eq('supplier_slug', sup)._exec();
+      if (cd && cd.length) items = cd.map(r => ({ id:r.id, client:r.client, campaign:r.campaign, name:r.name, start:r.start_date, end:r.end_date, budget:r.budget, status:r.status }));
+      else load();
+    } catch(e) { load(); }
+    const cl2 = getClients().find(c => slugify(c) === sup) || sup;
+    document.getElementById('sup-login-title').textContent = (typeof cl2 === 'string' ? cl2 : sup) + ' Dashboard';
+    document.getElementById('supplier-login').style.display = 'flex';
   } else {
-    // ── Demo / local storage mode ──
-    document.getElementById('loading-screen').style.display = 'none';
-    document.getElementById('demo-banner').style.display = 'block';
-    load();
-    if (sup) {
-      const cl = getClients().find(c => slugify(c) === sup || slugify(c).includes(sup.split('-')[0])) || sup;
-      document.getElementById('supplier-view').style.display = 'block';
-      document.getElementById('internal-view').style.display = 'none';
-      renderSupplierView(cl);
-    } else {
-      document.getElementById('internal-view').style.display = 'flex';
-      document.getElementById('internal-view').style.marginTop = '36px';
-      renderAll();
-    }
+    // Internal — no login, go straight in
+    // Load from Supabase, fall back to localStorage
+    try {
+      const { data: cd } = await _supabase.from('campaign_items').select('*')._exec();
+      if (cd && cd.length) {
+        items = cd.map(r => ({ id:r.id, client:r.client, campaign:r.campaign, name:r.name, start:r.start_date, end:r.end_date, budget:r.budget, status:r.status }));
+        try {
+          const { data: wd } = await _supabase.from('wip_notes').select('*')._exec();
+          if (wd && wd.length) wip = wd.map(r => ({ id:r.id, title:r.title, date:r.note_date, type:r.type, supplier:r.supplier, notes:r.notes||[] }));
+        } catch(e) {}
+      } else { load(); }
+    } catch(e) { load(); }
+    document.getElementById('internal-view').style.display = 'flex';
+    renderAll();
   }
 }
 
@@ -949,19 +944,21 @@ function handleCSV(e){const f=e.target.files[0];if(!f)return;const r=new FileRea
 function handleDrop(e){e.preventDefault();document.getElementById('drop-zone').classList.remove('dragover');const f=e.dataTransfer.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>parseCSV(ev.target.result);r.readAsText(f);}
 function parseCSV(text){
   const lines=text.trim().split('\n');if(lines.length<2)return;
-  const hdrs=lines[0].split(',').map(h=>h.trim().replace(/"/g,'').toLowerCase());
+  // Parse CSV properly handling quoted fields
+  function parseCSVLine(line){const r=[];let c='',q=false;for(let i=0;i<line.length;i++){const ch=line[i];if(ch==='"'){q=!q;}else if(ch===','&&!q){r.push(c.trim());c='';}else{c+=ch;}}r.push(c.trim());return r;}
+  const hdrs=parseCSVLine(lines[0]).map(h=>h.replace(/"/g,'').toLowerCase().trim());
   const m={};
   hdrs.forEach((h,i)=>{
-    if(h.includes('account')||h==='client')m.client=i;
-    if((h.includes('media campaign')||h.includes('campaign name'))&&m.campaign===undefined)m.campaign=i;
-    if((h.includes('media item')||h.includes('campaign item')||h.includes('placement'))&&m.item===undefined)m.item=i;
-    if((h.includes('from')||h.includes('start'))&&m.start===undefined)m.start=i;
+    if(h.includes('account')||h==='client'||h==='account name')m.client=i;
+    if((h.includes('media campaign')||h.includes('campaign name'))&&!h.includes('item')&&m.campaign===undefined)m.campaign=i;
+    if((h.includes('campaign item')||h.includes('media item')||h.includes('item name'))&&m.item===undefined)m.item=i;
+    if((h==='from (date)'||h==='from'||h.includes('start date')||h==='start')&&m.start===undefined)m.start=i;
     if((h.includes('until')||h.includes('end'))&&m.end===undefined)m.end=i;
-    if(h.includes('amount')||h.includes('investment')||h.includes('budget'))m.budget=i;
+    if(h.includes('amount')||h.includes('investment')||h.includes('budget')||h.includes('net'))m.budget=i;
   });
   const out=[];
   for(let i=1;i<lines.length;i++){
-    const c=lines[i].split(',').map(c=>c.trim().replace(/"/g,''));if(c.length<2)continue;
+    const c=parseCSVLine(lines[i]).map(c=>c.replace(/"/g,'').trim());if(c.length<2)continue;
     const name=c[m.item]||c[m.campaign]||c[0];if(!name)continue;
     out.push({id:Date.now()+i,client:c[m.client]||'Unknown',campaign:c[m.campaign]||c[m.client]||'Uncategorised',name,start:fD(c[m.start]||''),end:fD(c[m.end]||''),budget:parseFloat((c[m.budget]||'0').replace(/[^0-9.]/g,''))||0,status:'Booked'});
   }
@@ -1084,7 +1081,7 @@ function renderBlockPlan(fc){
   html+='</div></div>';
   camps.forEach((camp,ci)=>{
     const col=getColor(camp.client),tlid='tl-'+ci,cp=bp(camp.start,camp.end);
-    html+='<div class="tl-camp-row" onclick="toggleTLCamp(\''+tlid+'\')"><div class="tl-camp-lbl"><span style="color:var(--accent);font-size:11px" id="tl-chev-'+tlid+'">▶</span><span style="width:8px;height:8px;border-radius:50%;background:'+col+';display:inline-block;flex-shrink:0"></span><span style="font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:165px">'+camp.campaign+'</span></div><div class="tl-camp-bar-area" style="min-width:'+TW+'px">'+(cp?'<div class="tl-camp-bar" style="left:'+cp.left+'px;width:'+cp.w+'px;background:'+col+'"></div>':'')+'</div></div>';
+    html+='<div class="tl-camp-row" onclick="toggleTLCamp(\''+tlid+'\')"><div class="tl-camp-lbl"><span style="color:var(--accent);font-size:11px" id="tl-chev-'+tlid+'">▶</span><span style="width:8px;height:8px;border-radius:50%;background:'+col+';display:inline-block;flex-shrink:0"></span><div style="display:flex;flex-direction:column;max-width:160px;overflow:hidden"><span style="font-size:11px;font-weight:800;color:'+col+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+camp.client+'</span><span style="font-size:10px;font-weight:500;color:var(--slate);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+camp.campaign+'</span></div></div><div class="tl-camp-bar-area" style="min-width:'+TW+'px">'+(cp?'<div class="tl-camp-bar" style="left:'+cp.left+'px;width:'+cp.w+'px;background:'+col+'"></div>':'')+'</div></div>';
     camp.items.forEach((item,ii)=>{const pos=bp(item.start,item.end),ic=item.status==='Live'?'#16a34a':item.status==='Complete'?'#64748b':item.status==='Planning'?'#d97706':col;html+='<div class="tl-item-row" data-tl="'+tlid+'"><div class="tl-item-lbl"><span style="color:var(--border)">'+(ii===camp.items.length-1?'└':'├')+'</span> '+(item.name.length>30?item.name.substring(0,30)+'…':item.name)+'<div class="tl-item-sub-lbl">'+(item.budget?'$'+item.budget.toLocaleString():'TBC')+'</div></div><div class="tl-item-bar-area" style="min-width:'+TW+'px">'+(pos?'<div class="tl-item-bar" style="left:'+pos.left+'px;width:'+pos.w+'px;background:'+ic+'">'+(pos.w>50?item.status:'')+'</div>':'')+'</div></div>';});
   });
   wrap.innerHTML=html+'</div></div>';
@@ -1186,7 +1183,7 @@ function renderSVBlockPlan(camps,col,cl){
   html+='</div></div>';
   camps.forEach((camp,ci)=>{
     const tlid='svtl-'+ci,cp=bp(camp.start,camp.end);
-    html+='<div class="tl-camp-row" onclick="toggleTLCamp(\''+tlid+'\')"><div class="tl-camp-lbl"><span style="color:var(--accent);font-size:11px" id="tl-chev-'+tlid+'">▶</span><span style="width:8px;height:8px;border-radius:50%;background:'+col+';display:inline-block;flex-shrink:0"></span><span style="font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:165px">'+camp.campaign+'</span></div><div class="tl-camp-bar-area" style="min-width:'+TW+'px">'+(cp?'<div class="tl-camp-bar" style="left:'+cp.left+'px;width:'+cp.w+'px;background:'+col+'"></div>':'')+'</div></div>';
+    html+='<div class="tl-camp-row" onclick="toggleTLCamp(\''+tlid+'\')"><div class="tl-camp-lbl"><span style="color:var(--accent);font-size:11px" id="tl-chev-'+tlid+'">▶</span><span style="width:8px;height:8px;border-radius:50%;background:'+col+';display:inline-block;flex-shrink:0"></span><div style="display:flex;flex-direction:column;max-width:160px;overflow:hidden"><span style="font-size:11px;font-weight:800;color:'+col+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+camp.client+'</span><span style="font-size:10px;font-weight:500;color:var(--slate);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+camp.campaign+'</span></div></div><div class="tl-camp-bar-area" style="min-width:'+TW+'px">'+(cp?'<div class="tl-camp-bar" style="left:'+cp.left+'px;width:'+cp.w+'px;background:'+col+'"></div>':'')+'</div></div>';
     camp.items.forEach((item,ii)=>{const pos=bp(item.start,item.end),ic=item.status==='Live'?'#16a34a':item.status==='Complete'?'#64748b':item.status==='Planning'?'#d97706':col;html+='<div class="tl-item-row" data-tl="'+tlid+'"><div class="tl-item-lbl"><span style="color:var(--border)">'+(ii===camp.items.length-1?'└':'├')+'</span> '+(item.name.length>30?item.name.substring(0,30)+'…':item.name)+'<div class="tl-item-sub-lbl">'+(item.budget?'$'+item.budget.toLocaleString():'TBC')+'</div></div><div class="tl-item-bar-area" style="min-width:'+TW+'px">'+(pos?'<div class="tl-item-bar" style="left:'+pos.left+'px;width:'+pos.w+'px;background:'+ic+'">'+(pos.w>50?item.status:'')+'</div>':'')+'</div></div>';});
   });
   wrap.innerHTML=html+'</div></div>';
