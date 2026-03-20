@@ -262,18 +262,23 @@ body{font-family:'Figtree',sans-serif;background:var(--paper);color:var(--ink);m
       </div>
       <!-- Divider -->
       <div style="height:2px;background:#FFD000;border-radius:2px;margin-bottom:28px"></div>
+      <label style="font-size:11px;font-weight:800;letter-spacing:.8px;text-transform:uppercase;color:#111;display:block;margin-bottom:8px">Email</label>
+      <input id="internal-email" type="email" placeholder="your@oohmedia.com.au"
+        style="width:100%;padding:12px 14px;border:2px solid #e5e5e5;border-radius:8px;font-size:14px;font-family:'Figtree',sans-serif;outline:none;color:#111;box-sizing:border-box;margin-bottom:12px;transition:border-color .15s"
+        onfocus="this.style.borderColor='#FFD000'" onblur="this.style.borderColor='#e5e5e5'"
+        onkeydown="if(event.key==='Enter')checkInternalLogin()">
       <label style="font-size:11px;font-weight:800;letter-spacing:.8px;text-transform:uppercase;color:#111;display:block;margin-bottom:8px">Password</label>
-      <input id="internal-pw" type="password" placeholder="Enter team password"
+      <input id="internal-pw" type="password" placeholder="Enter your password"
         style="width:100%;padding:12px 14px;border:2px solid #e5e5e5;border-radius:8px;font-size:14px;font-family:'Figtree',sans-serif;outline:none;color:#111;box-sizing:border-box;margin-bottom:16px;transition:border-color .15s"
         onfocus="this.style.borderColor='#FFD000'" onblur="this.style.borderColor='#e5e5e5'"
         onkeydown="if(event.key==='Enter')checkInternalLogin()">
-      <button onclick="checkInternalLogin()"
+      <button onclick="checkInternalLogin()" id="login-btn"
         style="width:100%;padding:13px;background:#FFD000;color:#111;border:none;border-radius:8px;font-size:14px;font-weight:900;cursor:pointer;font-family:'Figtree',sans-serif;letter-spacing:.3px;transition:opacity .15s"
         onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">
         Sign In →
       </button>
       <div id="internal-pw-err" style="display:none;color:#dc2626;font-size:12px;text-align:center;margin-top:12px;font-weight:700">
-        ⚠️ Incorrect password. Please try again.
+        ⚠️ Incorrect email or password. Please try again.
       </div>
     </div>
     <div style="text-align:center;margin-top:16px;font-size:11px;color:#aaa">
@@ -849,7 +854,7 @@ function afterAuth() {
 }
 
 async function loadFromSupabase() {
-  if (!supabaseMode || !_supabase || !_supabase._token) { load(); return; }
+  if (!supabaseMode || !_supabase) { load(); return; }
   try {
     const [{ data: cd, error: ce }, { data: wd }, { data: ld }] = await Promise.all([
       _supabase.from('campaign_items').select('*')._exec(),
@@ -968,19 +973,39 @@ async function loadInternalData() {
   renderAll();
 }
 
-function checkInternalLogin() {
+const ADMIN_EMAILS = ['isabelle.palmer@oohmedia.com.au','liz.toohey@oohmedia.com.au','hamid.alfughi@oohmedia.com.au'];
+
+async function checkInternalLogin() {
+  const email = document.getElementById('internal-email').value.trim().toLowerCase();
   const pw = document.getElementById('internal-pw').value;
-  const INTERNAL_PW = 'PetAds2026!';
-  const ADMIN_PW = 'PetAdsAdmin!';
-  if (pw === INTERNAL_PW || pw === ADMIN_PW) {
-    sessionStorage.setItem('petads_internal_auth', 'true');
-    if (pw === ADMIN_PW) sessionStorage.setItem('petads_admin', 'true');
-    document.getElementById('internal-login-screen').style.display = 'none';
-    loadInternalData();
-  } else {
-    document.getElementById('internal-pw-err').style.display = 'block';
-    document.getElementById('internal-pw').value = '';
+  const err = document.getElementById('internal-pw-err');
+  const btn = document.getElementById('login-btn');
+  err.style.display = 'none';
+  btn.textContent = 'Signing in...';
+  btn.style.opacity = '.7';
+  try {
+    const res = await fetch(_supabaseUrl + '/auth/v1/token?grant_type=password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': _supabaseKey },
+      body: JSON.stringify({ email, password: pw })
+    });
+    const data = await res.json();
+    if (data.access_token) {
+      sessionStorage.setItem('petads_internal_auth', 'true');
+      sessionStorage.setItem('petads_email', email);
+      if (ADMIN_EMAILS.includes(email)) sessionStorage.setItem('petads_admin', 'true');
+      _supabase._token = data.access_token;
+      document.getElementById('internal-login-screen').style.display = 'none';
+      loadInternalData();
+    } else {
+      err.style.display = 'block';
+      document.getElementById('internal-pw').value = '';
+    }
+  } catch(e) {
+    err.style.display = 'block';
   }
+  btn.textContent = 'Sign In →';
+  btn.style.opacity = '1';
 }
 
 // TITLES defined above
